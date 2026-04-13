@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Visual Step Sequencer</title>
+  <style>
+    :root {
+      --bg: #000000;
+      --panel-w: 120px;
+      --gap: 4px;
+      --text: #ffffff;
+      --border: #ffffff;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html, body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      background: var(--bg);
+      overflow: hidden;
+      font-family: Arial, Helvetica, sans-serif;
+      color: var(--text);
+    }
+
+    body {
+      display: flex;
+      width: 100vw;
+      height: 100vh;
+      background: var(--bg);
+    }
+
+    #control-window {
+      width: var(--panel-w);
+      min-width: var(--panel-w);
+      height: 100vh;
+      background: var(--bg);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      padding: 12px 10px;
+    }
+
+    button,
+    input[type="number"] {
+      background: var(--bg);
+      color: var(--text);
+      border: 1px solid var(--border);
+      font-size: 14px;
+      height: 36px;
+    }
+
+    button {
+      width: 90px;
+      cursor: pointer;
+    }
+
+    button:disabled,
+    input:disabled {
+      opacity: 0.45;
+      cursor: default;
+    }
+
+    .control-group {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      width: 100%;
+    }
+
+    label {
+      font-size: 13px;
+      text-align: center;
+    }
+
+    input[type="number"] {
+      width: 90px;
+      padding: 0 8px;
+      text-align: center;
+    }
+
+    #main-area {
+      flex: 1;
+      height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 8px;
+      overflow: hidden;
+    }
+
+    #sequencer-window {
+      width: 100%;
+      height: 100%;
+      display: grid;
+      grid-template-columns: repeat(17, 1fr);
+      grid-template-rows: repeat(9, 1fr);
+      gap: var(--gap);
+      background: var(--bg);
+    }
+
+    .cell,
+    .label-cell {
+      background: var(--bg);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      user-select: none;
+      min-width: 0;
+      min-height: 0;
+    }
+
+    .cell {
+      cursor: pointer;
+    }
+
+    .cell.locked {
+      cursor: default;
+    }
+
+    .cell img,
+    .label-cell img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      display: block;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="control-window">
+    <button id="playStopBtn" type="button">Play</button>
+
+    <div class="control-group">
+      <label for="speedInput">Speed</label>
+      <input id="speedInput" type="number" value="120" min="1" step="1" />
+    </div>
+
+    <button id="clearBtn" type="button">Clear</button>
+    <button id="shuffleBtn" type="button">Shuffle</button>
+  </div>
+
+  <div id="main-area">
+    <div id="sequencer-window"></div>
+  </div>
+
+  <script>
+    const ROWS = 9;
+    const STEPS = 16;
+    const PATTERN_LENGTHS = [2, 3, 4, 6, 8];
+
+    const sequencerWindow = document.getElementById("sequencer-window");
+    const playStopBtn = document.getElementById("playStopBtn");
+    const speedInput = document.getElementById("speedInput");
+    const clearBtn = document.getElementById("clearBtn");
+    const shuffleBtn = document.getElementById("shuffleBtn");
+
+    let isPlaying = false;
+    let currentStep = 0;
+    let timerId = null;
+
+    const stepCells = [];
+
+    function getOffImage(row, isActive) {
+      return isActive ? `${row + 1}-off.png` : `0-off.png`;
+    }
+
+    function getOnImage(row, isActive) {
+      return isActive ? `${row + 1}-on.png` : `0-on.png`;
+    }
+
+    function createIndicatorCell(row) {
+      const cell = document.createElement("div");
+      cell.className = "label-cell";
+
+      const img = document.createElement("img");
+      img.src = `${row + 1}.png`;
+      img.alt = `Row ${row + 1} indicator`;
+
+      cell.appendChild(img);
+      return cell;
+    }
+
+    function setCellVisual(row, step, useOnImages) {
+      const cell = stepCells[row][step];
+      const img = cell.querySelector("img");
+      const isActive = cell.dataset.active === "true";
+      img.src = useOnImages
+        ? getOnImage(row, isActive)
+        : getOffImage(row, isActive);
+    }
+
+    function setCellState(row, step, active) {
+      const cell = stepCells[row][step];
+      cell.dataset.active = String(active);
+      setCellVisual(row, step, false);
+    }
+
+    function createStepCell(row, step) {
+      const cell = document.createElement("div");
+      cell.className = "cell";
+      cell.dataset.row = row;
+      cell.dataset.step = step;
+      cell.dataset.active = "false";
+
+      const img = document.createElement("img");
+      img.src = "0-off.png";
+      img.alt = `Row ${row + 1}, Step ${step + 1}`;
+
+      cell.appendChild(img);
+
+      cell.addEventListener("click", () => {
+        if (isPlaying) return;
+
+        const nextState = cell.dataset.active !== "true";
+        setCellState(row, step, nextState);
+      });
+
+      return cell;
+    }
+
+    function buildGrid() {
+      for (let row = 0; row < ROWS; row++) {
+        sequencerWindow.appendChild(createIndicatorCell(row));
+
+        const rowCells = [];
+        for (let step = 0; step < STEPS; step++) {
+          const cell = createStepCell(row, step);
+          rowCells.push(cell);
+          sequencerWindow.appendChild(cell);
+        }
+        stepCells.push(rowCells);
+      }
+    }
+
+    function setControlsLocked(locked) {
+      speedInput.disabled = locked;
+      clearBtn.disabled = locked;
+      shuffleBtn.disabled = locked;
+
+      for (let row = 0; row < ROWS; row++) {
+        for (let step = 0; step < STEPS; step++) {
+          stepCells[row][step].classList.toggle("locked", locked);
+        }
+      }
+    }
+
+    function renderColumn(stepIndex, useOnImages) {
+      for (let row = 0; row < ROWS; row++) {
+        setCellVisual(row, stepIndex, useOnImages);
+      }
+    }
+
+    function clearAllColumnsToOff() {
+      for (let step = 0; step < STEPS; step++) {
+        renderColumn(step, false);
+      }
+    }
+
+    function clearPattern() {
+      if (isPlaying) return;
+
+      for (let row = 0; row < ROWS; row++) {
+        for (let step = 0; step < STEPS; step++) {
+          setCellState(row, step, false);
+        }
+      }
+    }
+
+    function randomPatternValue(length, forceAtLeastOneOn) {
+      let pattern = Array.from({ length }, () => Math.random() < 0.5);
+
+      if (forceAtLeastOneOn && !pattern.some(Boolean)) {
+        pattern[Math.floor(Math.random() * length)] = true;
+      }
+
+      if (pattern.every(Boolean)) {
+        pattern[Math.floor(Math.random() * length)] = false;
+      }
+
+      return pattern;
+    }
+
+    function shufflePattern() {
+      if (isPlaying) return;
+
+      for (let row = 0; row < ROWS; row++) {
+        const patternLength = PATTERN_LENGTHS[Math.floor(Math.random() * PATTERN_LENGTHS.length)];
+        const pattern = randomPatternValue(patternLength, true);
+
+        for (let step = 0; step < STEPS; step++) {
+          const active = pattern[step % patternLength];
+          setCellState(row, step, active);
+        }
+      }
+    }
+
+    function getStepIntervalMs() {
+      const bpm = Math.max(1, Number(speedInput.value) || 120);
+      return 60000 / bpm;
+    }
+
+    function advanceSequencer() {
+      renderColumn(currentStep, false);
+      currentStep = (currentStep + 1) % STEPS;
+      renderColumn(currentStep, true);
+      timerId = setTimeout(advanceSequencer, getStepIntervalMs());
+    }
+
+    function startSequencer() {
+      if (isPlaying) return;
+
+      isPlaying = true;
+      playStopBtn.textContent = "Stop";
+      setControlsLocked(true);
+
+      currentStep = 0;
+      clearAllColumnsToOff();
+      renderColumn(currentStep, true);
+
+      timerId = setTimeout(advanceSequencer, getStepIntervalMs());
+    }
+
+    function stopSequencer() {
+      if (!isPlaying) return;
+
+      isPlaying = false;
+      playStopBtn.textContent = "Play";
+      setControlsLocked(false);
+
+      if (timerId !== null) {
+        clearTimeout(timerId);
+        timerId = null;
+      }
+
+      clearAllColumnsToOff();
+      currentStep = 0;
+    }
+
+    playStopBtn.addEventListener("click", () => {
+      if (isPlaying) {
+        stopSequencer();
+      } else {
+        startSequencer();
+      }
+    });
+
+    clearBtn.addEventListener("click", clearPattern);
+    shuffleBtn.addEventListener("click", shufflePattern);
+
+    buildGrid();
+  </script>
+</body>
+</html>

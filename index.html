@@ -1,0 +1,1042 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sound Palette Widget</title>
+  <style>
+    :root {
+      --bg: #0f1115;
+      --panel: #171a21;
+      --panel2: #1f2430;
+      --border: #3b4252;
+      --text: #e8edf5;
+      --muted: #9aa4b2;
+      --accent: #87b3ff;
+      --accent2: #9ff0c4;
+      --danger: #ff8f8f;
+      --dot: #ffffff;
+      --disabled: #5a6474;
+      --cell: #202633;
+      --cellActive: #33415c;
+      --cellSelected: #4a5f89;
+    }
+
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Arial, Helvetica, sans-serif;
+    }
+
+    body {
+      display: grid;
+      grid-template-rows: 3fr 1fr;
+      gap: 10px;
+      padding: 10px;
+    }
+
+    button, input {
+      font: inherit;
+    }
+
+    button {
+      background: var(--panel2);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 10px;
+      cursor: pointer;
+      min-height: 40px;
+    }
+
+    button:hover:not(:disabled) {
+      border-color: var(--accent);
+    }
+
+    button:disabled {
+      color: var(--disabled);
+      cursor: not-allowed;
+      opacity: 0.7;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      min-height: 0;
+    }
+
+    #paletteWindow {
+      display: grid;
+      grid-template-columns: repeat(9, minmax(0, 1fr));
+      gap: 8px;
+      padding: 8px;
+      min-height: 0;
+    }
+
+    .palette-col {
+      background: #141923;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      display: grid;
+      grid-template-rows: auto auto 1fr auto auto;
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    .col-label {
+      text-align: center;
+      font-weight: bold;
+      font-size: 14px;
+      padding: 6px 4px 2px;
+      color: var(--text);
+    }
+
+    .col-image-wrap {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 4px 6px 8px;
+      min-height: 72px;
+    }
+
+    .col-image {
+      width: 100%;
+      max-width: 84px;
+      max-height: 56px;
+      object-fit: contain;
+      pointer-events: none;
+      user-select: none;
+      opacity: 0.95;
+    }
+
+    .cells {
+      display: grid;
+      grid-template-rows: repeat(10, 1fr);
+      gap: 4px;
+      padding: 4px 6px 8px;
+      min-height: 0;
+    }
+
+    .cell {
+      border: 1px solid var(--border);
+      background: var(--cell);
+      border-radius: 6px;
+      min-height: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: background 0.12s, border-color 0.12s, transform 0.12s, box-shadow 0.12s;
+      position: relative;
+    }
+
+    .cell:hover {
+      border-color: var(--accent);
+    }
+
+    .cell.loaded {
+      background: var(--cellActive);
+    }
+
+    .cell.selected {
+      background: var(--cellSelected);
+      border-color: var(--accent2);
+      box-shadow: inset 0 0 0 1px var(--accent2);
+    }
+
+    .cell.playing {
+      border-color: var(--accent);
+      box-shadow: inset 0 0 0 1px var(--accent), 0 0 14px rgba(135, 179, 255, 0.45);
+      transform: scale(1.02);
+    }
+
+    .cell.selected.playing {
+      border-color: var(--accent2);
+      box-shadow: inset 0 0 0 1px var(--accent2), 0 0 16px rgba(159, 240, 196, 0.45);
+    }
+
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--dot);
+      opacity: 0.9;
+      pointer-events: none;
+    }
+
+    .field-block {
+      padding: 0 6px 6px;
+      display: grid;
+      gap: 4px;
+    }
+
+    .field-row {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 3px;
+    }
+
+    .field-row label {
+      font-size: 11px;
+      color: var(--muted);
+      text-align: center;
+    }
+
+    .field-row input {
+      width: 100%;
+      background: #10141c;
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 6px;
+      padding: 5px 6px;
+      text-align: center;
+      min-width: 0;
+    }
+
+    #bottomRow {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      min-height: 0;
+    }
+
+    #sampleWindow, #controlWindow {
+      display: grid;
+      min-height: 0;
+    }
+
+    #sampleWindow {
+      grid-template-rows: 1fr auto;
+      padding: 10px;
+      gap: 10px;
+    }
+
+    .sample-main {
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 10px;
+      min-height: 0;
+    }
+
+    .wave-wrap, .sample-image-wrap {
+      background: #10141c;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      min-height: 0;
+      overflow: hidden;
+      position: relative;
+    }
+
+    #waveCanvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    #sampleImage {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      display: block;
+      pointer-events: none;
+      user-select: none;
+      padding: 10px;
+    }
+
+    .sample-buttons, .control-buttons {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+    }
+
+    #controlWindow {
+      grid-template-rows: auto 1fr;
+      padding: 10px;
+      gap: 10px;
+    }
+
+    .status-box {
+      background: #10141c;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px;
+      overflow: auto;
+      font-size: 14px;
+      line-height: 1.45;
+    }
+
+    .status-line {
+      margin-bottom: 8px;
+    }
+
+    .mini-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .mini-card {
+      background: #171d28;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px;
+      font-size: 12px;
+    }
+
+    .mini-card strong {
+      display: block;
+      margin-bottom: 4px;
+      color: var(--accent2);
+    }
+
+    .pill {
+      display: inline-block;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 3px 8px;
+      margin-right: 6px;
+      margin-bottom: 4px;
+      font-size: 12px;
+      background: #171d28;
+    }
+
+    .recording {
+      border-color: var(--danger) !important;
+      box-shadow: 0 0 0 1px var(--danger) inset;
+    }
+
+    @media (max-width: 1200px) {
+      .sample-main {
+        grid-template-columns: 1fr 220px;
+      }
+    }
+
+    @media (max-width: 980px) {
+      body {
+        grid-template-rows: 2fr 1fr;
+      }
+      #bottomRow {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="paletteWindow" class="panel"></div>
+
+  <div id="bottomRow">
+    <div id="sampleWindow" class="panel">
+      <div class="sample-main">
+        <div class="wave-wrap">
+          <canvas id="waveCanvas"></canvas>
+        </div>
+        <div class="sample-image-wrap">
+          <img id="sampleImage" alt="Column image" />
+        </div>
+      </div>
+      <div class="sample-buttons">
+        <button id="recordSampleBtn">RECORD</button>
+        <button id="playSampleBtn" disabled>PLAY</button>
+        <button id="addSampleBtn" disabled>ADD</button>
+        <button id="deleteSampleBtn" disabled>DELETE</button>
+      </div>
+    </div>
+
+    <div id="controlWindow" class="panel">
+      <div class="control-buttons">
+        <button id="transportBtn">PLAY</button>
+        <button id="clearBtn">CLEAR</button>
+        <button id="downloadSamplesBtn">DOWNLOAD SAMPLES AS WAVS</button>
+        <button id="recordSessionBtn">RECORD</button>
+      </div>
+      <div class="status-box" id="statusBox">
+        <div class="status-line"><strong>Selected Cell:</strong> <span id="selectedInfo">None</span></div>
+        <div class="status-line"><strong>Sample Status:</strong> <span id="sampleInfo">Empty</span></div>
+        <div class="status-line"><strong>Transport:</strong> <span id="transportInfo">Stopped</span></div>
+        <div class="status-line"><strong>Session Recorder:</strong> <span id="sessionInfo">Idle</span></div>
+        <div class="mini-grid" id="colSummary"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const NUM_COLS = 9;
+    const CELLS_PER_COL = 10;
+    const MAX_SAMPLE_SECONDS = 1;
+    const DEFAULT_SPEED = 500;
+    const DEFAULT_DENSITY = 100;
+
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const masterGain = audioCtx.createGain();
+    masterGain.gain.value = 0.95;
+    masterGain.connect(audioCtx.destination);
+
+    const paletteWindow = document.getElementById('paletteWindow');
+    const waveCanvas = document.getElementById('waveCanvas');
+    const waveCtx = waveCanvas.getContext('2d');
+    const sampleImage = document.getElementById('sampleImage');
+    const selectedInfo = document.getElementById('selectedInfo');
+    const sampleInfo = document.getElementById('sampleInfo');
+    const transportInfo = document.getElementById('transportInfo');
+    const sessionInfo = document.getElementById('sessionInfo');
+    const colSummary = document.getElementById('colSummary');
+
+    const recordSampleBtn = document.getElementById('recordSampleBtn');
+    const playSampleBtn = document.getElementById('playSampleBtn');
+    const addSampleBtn = document.getElementById('addSampleBtn');
+    const deleteSampleBtn = document.getElementById('deleteSampleBtn');
+
+    const transportBtn = document.getElementById('transportBtn');
+    const clearBtn = document.getElementById('clearBtn');
+    const downloadSamplesBtn = document.getElementById('downloadSamplesBtn');
+    const recordSessionBtn = document.getElementById('recordSessionBtn');
+
+    const state = {
+      columns: [],
+      selectedCol: null,
+      selectedCell: null,
+      currentSampleBuffer: null,
+      isTransportRunning: false,
+      columnTimers: new Array(NUM_COLS).fill(null),
+      activeSources: new Set(),
+      sampleRecorder: null,
+      sampleRecordingStream: null,
+      sampleChunks: [],
+      sampleRecordTimeout: null,
+      sessionDestination: null,
+      sessionRecorder: null,
+      sessionChunks: [],
+      isSessionRecording: false,
+      samplePlaySource: null,
+      currentlyPlayingCells: new Set(),
+    };
+
+    function initState() {
+      for (let c = 0; c < NUM_COLS; c++) {
+        const column = {
+          speed: DEFAULT_SPEED,
+          density: DEFAULT_DENSITY,
+          cells: Array.from({ length: CELLS_PER_COL }, () => ({ buffer: null })),
+          get COL_TOTAL_SND() {
+            return this.cells.reduce((n, cell) => n + (cell.buffer ? 1 : 0), 0);
+          },
+        };
+        state.columns.push(column);
+      }
+    }
+
+    function buildPalette() {
+      paletteWindow.innerHTML = '';
+      for (let c = 0; c < NUM_COLS; c++) {
+        const col = document.createElement('div');
+        col.className = 'palette-col';
+        col.dataset.col = c;
+
+        const label = document.createElement('div');
+        label.className = 'col-label';
+        label.textContent = String(c + 1);
+
+        const imageWrap = document.createElement('div');
+        imageWrap.className = 'col-image-wrap';
+        const img = document.createElement('img');
+        img.className = 'col-image';
+        img.src = `${c + 1}.png`;
+        img.alt = `Column ${c + 1}`;
+        img.draggable = false;
+        imageWrap.appendChild(img);
+
+        const cells = document.createElement('div');
+        cells.className = 'cells';
+        for (let r = 0; r < CELLS_PER_COL; r++) {
+          const cell = document.createElement('div');
+          cell.className = 'cell';
+          cell.dataset.col = c;
+          cell.dataset.row = r;
+          cell.addEventListener('click', () => selectCell(c, r));
+          cells.appendChild(cell);
+        }
+
+        const speedWrap = document.createElement('div');
+        speedWrap.className = 'field-block';
+        speedWrap.innerHTML = `
+          <div class="field-row">
+            <label>SPEED (ms)</label>
+            <input type="number" min="0" max="5000" step="1" value="${DEFAULT_SPEED}" data-kind="speed" data-col="${c}" />
+          </div>
+        `;
+
+        const densityWrap = document.createElement('div');
+        densityWrap.className = 'field-block';
+        densityWrap.innerHTML = `
+          <div class="field-row">
+            <label>DENSITY (%)</label>
+            <input type="number" min="0" max="100" step="1" value="${DEFAULT_DENSITY}" data-kind="density" data-col="${c}" />
+          </div>
+        `;
+
+        col.append(label, imageWrap, cells, speedWrap, densityWrap);
+        paletteWindow.appendChild(col);
+      }
+
+      paletteWindow.querySelectorAll('input[data-kind]').forEach(input => {
+        input.addEventListener('change', handleFieldChange);
+        input.addEventListener('input', handleFieldChange);
+      });
+    }
+
+    function handleFieldChange(e) {
+      const input = e.target;
+      const col = Number(input.dataset.col);
+      const kind = input.dataset.kind;
+      let value = Number(input.value);
+      if (kind === 'speed') {
+        value = Math.max(0, Math.min(5000, Math.round(Number.isFinite(value) ? value : DEFAULT_SPEED)));
+        state.columns[col].speed = value;
+      } else {
+        value = Math.max(0, Math.min(100, Math.round(Number.isFinite(value) ? value : 0)));
+        state.columns[col].density = value;
+      }
+      input.value = value;
+      renderStatus();
+    }
+
+    function getCellElement(col, row) {
+      return paletteWindow.querySelector(`.cell[data-col="${col}"][data-row="${row}"]`);
+    }
+
+    function renderPalette() {
+      for (let c = 0; c < NUM_COLS; c++) {
+        for (let r = 0; r < CELLS_PER_COL; r++) {
+          const cellEl = getCellElement(c, r);
+          const cellState = state.columns[c].cells[r];
+          cellEl.innerHTML = '';
+          cellEl.classList.toggle('loaded', !!cellState.buffer);
+          const isSelected = state.selectedCol === c && state.selectedCell === r;
+          cellEl.classList.toggle('selected', isSelected);
+          const playKey = `${c}-${r}`;
+          cellEl.classList.toggle('playing', state.currentlyPlayingCells.has(playKey));
+          if (cellState.buffer) {
+            const dot = document.createElement('div');
+            dot.className = 'dot';
+            cellEl.appendChild(dot);
+          }
+        }
+      }
+      renderStatus();
+    }
+
+    function renderStatus() {
+      if (state.selectedCol == null || state.selectedCell == null) {
+        selectedInfo.textContent = 'None';
+      } else {
+        selectedInfo.textContent = `Column ${state.selectedCol + 1}, Cell ${state.selectedCell + 1}`;
+      }
+
+      const selectedStored = getSelectedStoredBuffer();
+      const currentBuffer = state.currentSampleBuffer;
+      if (currentBuffer) {
+        sampleInfo.textContent = `Loaded (${currentBuffer.duration.toFixed(2)}s)`;
+      } else if (selectedStored) {
+        sampleInfo.textContent = `Stored (${selectedStored.duration.toFixed(2)}s)`;
+      } else {
+        sampleInfo.textContent = 'Empty';
+      }
+
+      transportInfo.textContent = state.isTransportRunning ? 'Running' : 'Stopped';
+      sessionInfo.textContent = state.isSessionRecording ? 'Recording output' : 'Idle';
+
+      colSummary.innerHTML = '';
+      for (let c = 0; c < NUM_COLS; c++) {
+        const card = document.createElement('div');
+        card.className = 'mini-card';
+        card.innerHTML = `
+          <strong>Column ${c + 1}</strong>
+          <div class="pill">Samples: ${state.columns[c].COL_TOTAL_SND}</div>
+          <div class="pill">Speed: ${state.columns[c].speed} ms</div>
+          <div class="pill">Density: ${state.columns[c].density}%</div>
+        `;
+        colSummary.appendChild(card);
+      }
+
+      const selectedExists = state.selectedCol != null && state.selectedCell != null;
+      const hasWorkingBuffer = !!state.currentSampleBuffer;
+      const hasStoredBuffer = !!selectedStored;
+      const locked = state.isTransportRunning;
+      const isSampleRecording = !!state.sampleRecorder && state.sampleRecorder.state === 'recording';
+
+      recordSampleBtn.disabled = locked || !selectedExists || isSampleRecording;
+      playSampleBtn.disabled = locked || !(hasWorkingBuffer || hasStoredBuffer);
+      addSampleBtn.disabled = locked || !selectedExists || !hasWorkingBuffer;
+      deleteSampleBtn.disabled = locked || !selectedExists || !hasStoredBuffer;
+
+      transportBtn.textContent = state.isTransportRunning ? 'STOP' : 'PLAY';
+      recordSessionBtn.textContent = state.isSessionRecording ? 'STOP & DOWNLOAD SESSION' : 'RECORD';
+
+      const disableNonControl = state.isTransportRunning;
+      paletteWindow.querySelectorAll('.cell, input').forEach(el => {
+        el.style.pointerEvents = disableNonControl ? 'none' : 'auto';
+        el.style.opacity = disableNonControl ? '0.7' : '1';
+      });
+      [recordSampleBtn, playSampleBtn, addSampleBtn, deleteSampleBtn].forEach(btn => {
+        btn.style.opacity = disableNonControl ? '0.7' : '1';
+      });
+    }
+
+    function selectCell(col, row) {
+      if (state.isTransportRunning) return;
+      state.selectedCol = col;
+      state.selectedCell = row;
+      state.currentSampleBuffer = cloneAudioBuffer(state.columns[col].cells[row].buffer);
+      sampleImage.src = `${col + 1}.png`;
+      drawWaveform(state.currentSampleBuffer || state.columns[col].cells[row].buffer);
+      renderPalette();
+    }
+
+    function getSelectedStoredBuffer() {
+      if (state.selectedCol == null || state.selectedCell == null) return null;
+      return state.columns[state.selectedCol].cells[state.selectedCell].buffer;
+    }
+
+    function cloneAudioBuffer(buffer) {
+      if (!buffer) return null;
+      const cloned = audioCtx.createBuffer(buffer.numberOfChannels, buffer.length, buffer.sampleRate);
+      for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
+        cloned.copyToChannel(buffer.getChannelData(ch), ch);
+      }
+      return cloned;
+    }
+
+    function resizeWaveCanvas() {
+      const rect = waveCanvas.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      waveCanvas.width = Math.max(1, Math.floor(rect.width * dpr));
+      waveCanvas.height = Math.max(1, Math.floor(rect.height * dpr));
+      waveCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      drawWaveform(state.currentSampleBuffer || getSelectedStoredBuffer());
+    }
+
+    function drawWaveform(buffer) {
+      const rect = waveCanvas.getBoundingClientRect();
+      const w = rect.width;
+      const h = rect.height;
+      waveCtx.clearRect(0, 0, w, h);
+      waveCtx.fillStyle = '#10141c';
+      waveCtx.fillRect(0, 0, w, h);
+
+      waveCtx.strokeStyle = '#2f394b';
+      waveCtx.lineWidth = 1;
+      waveCtx.beginPath();
+      waveCtx.moveTo(0, h / 2);
+      waveCtx.lineTo(w, h / 2);
+      waveCtx.stroke();
+
+      if (!buffer) {
+        waveCtx.fillStyle = '#7f8b99';
+        waveCtx.font = '16px Arial';
+        waveCtx.textAlign = 'center';
+        waveCtx.textBaseline = 'middle';
+        waveCtx.fillText('No sample loaded', w / 2, h / 2);
+        return;
+      }
+
+      const data = buffer.getChannelData(0);
+      const step = Math.ceil(data.length / w);
+      waveCtx.beginPath();
+      waveCtx.strokeStyle = '#9ff0c4';
+      waveCtx.lineWidth = 1.5;
+
+      for (let x = 0; x < w; x++) {
+        let min = 1;
+        let max = -1;
+        const start = x * step;
+        const end = Math.min(start + step, data.length);
+        for (let i = start; i < end; i++) {
+          const v = data[i];
+          if (v < min) min = v;
+          if (v > max) max = v;
+        }
+        waveCtx.moveTo(x, (1 + min) * 0.5 * h);
+        waveCtx.lineTo(x, (1 + max) * 0.5 * h);
+      }
+      waveCtx.stroke();
+    }
+
+    async function ensureAudioStarted() {
+      if (audioCtx.state !== 'running') {
+        await audioCtx.resume();
+      }
+    }
+
+    async function startSampleRecording() {
+      if (state.isTransportRunning) return;
+      if (state.selectedCol == null || state.selectedCell == null) {
+        alert('Select a palette cell first.');
+        return;
+      }
+      await ensureAudioStarted();
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        state.sampleRecordingStream = stream;
+        state.sampleChunks = [];
+        const rec = new MediaRecorder(stream);
+        state.sampleRecorder = rec;
+        recordSampleBtn.classList.add('recording');
+        recordSampleBtn.textContent = 'RECORDING...';
+
+        rec.ondataavailable = e => {
+          if (e.data && e.data.size > 0) state.sampleChunks.push(e.data);
+        };
+
+        rec.onstop = async () => {
+          recordSampleBtn.classList.remove('recording');
+          recordSampleBtn.textContent = 'RECORD';
+          clearTimeout(state.sampleRecordTimeout);
+          if (state.sampleRecordingStream) {
+            state.sampleRecordingStream.getTracks().forEach(t => t.stop());
+          }
+          state.sampleRecordingStream = null;
+
+          const blob = new Blob(state.sampleChunks, { type: rec.mimeType || 'audio/webm' });
+          if (blob.size > 0) {
+            const arr = await blob.arrayBuffer();
+            const decoded = await audioCtx.decodeAudioData(arr.slice(0));
+            state.currentSampleBuffer = trimBuffer(decoded, MAX_SAMPLE_SECONDS);
+            drawWaveform(state.currentSampleBuffer);
+          }
+          state.sampleRecorder = null;
+          renderStatus();
+        };
+
+        rec.start();
+        state.sampleRecordTimeout = setTimeout(() => {
+          if (state.sampleRecorder && state.sampleRecorder.state === 'recording') {
+            state.sampleRecorder.stop();
+          }
+        }, MAX_SAMPLE_SECONDS * 1000);
+        renderStatus();
+      } catch (err) {
+        console.error(err);
+        alert('Microphone access failed.');
+        recordSampleBtn.classList.remove('recording');
+        recordSampleBtn.textContent = 'RECORD';
+        renderStatus();
+      }
+    }
+
+    function trimBuffer(buffer, maxSeconds) {
+      const maxLength = Math.min(buffer.length, Math.floor(buffer.sampleRate * maxSeconds));
+      if (maxLength >= buffer.length) return cloneAudioBuffer(buffer);
+      const trimmed = audioCtx.createBuffer(buffer.numberOfChannels, maxLength, buffer.sampleRate);
+      for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
+        trimmed.copyToChannel(buffer.getChannelData(ch).slice(0, maxLength), ch);
+      }
+      return trimmed;
+    }
+
+    async function playBuffer(buffer) {
+      if (!buffer) return;
+      await ensureAudioStarted();
+      if (state.samplePlaySource) {
+        try { state.samplePlaySource.stop(); } catch (_) {}
+        state.samplePlaySource = null;
+      }
+      const source = audioCtx.createBufferSource();
+      source.buffer = buffer;
+      source.connect(masterGain);
+      source.onended = () => {
+        if (state.samplePlaySource === source) state.samplePlaySource = null;
+      };
+      state.samplePlaySource = source;
+      source.start();
+    }
+
+    function addCurrentSampleToCell() {
+      if (state.isTransportRunning) return;
+      if (state.selectedCol == null || state.selectedCell == null) return;
+      if (!state.currentSampleBuffer) return;
+      state.columns[state.selectedCol].cells[state.selectedCell].buffer = cloneAudioBuffer(state.currentSampleBuffer);
+      renderPalette();
+    }
+
+    function deleteCurrentCellSample() {
+      if (state.isTransportRunning) return;
+      if (state.selectedCol == null || state.selectedCell == null) return;
+      state.columns[state.selectedCol].cells[state.selectedCell].buffer = null;
+      state.currentSampleBuffer = null;
+      drawWaveform(null);
+      renderPalette();
+    }
+
+    async function toggleTransport() {
+      await ensureAudioStarted();
+      if (state.isTransportRunning) {
+        stopTransport();
+      } else {
+        startTransport();
+      }
+    }
+
+    function startTransport() {
+      if (state.isTransportRunning) return;
+      state.isTransportRunning = true;
+      for (let c = 0; c < NUM_COLS; c++) {
+        scheduleColumn(c, 0);
+      }
+      renderStatus();
+    }
+
+    function stopTransport() {
+      state.isTransportRunning = false;
+      for (let c = 0; c < NUM_COLS; c++) {
+        clearTimeout(state.columnTimers[c]);
+        state.columnTimers[c] = null;
+      }
+      for (const source of Array.from(state.activeSources)) {
+        try { source.stop(); } catch (_) {}
+      }
+      state.activeSources.clear();
+      state.currentlyPlayingCells.clear();
+      renderPalette();
+    }
+
+    function scheduleColumn(colIndex, delay) {
+      clearTimeout(state.columnTimers[colIndex]);
+      state.columnTimers[colIndex] = setTimeout(() => runColumnStep(colIndex), delay);
+    }
+
+    function runColumnStep(colIndex) {
+      if (!state.isTransportRunning) return;
+      const column = state.columns[colIndex];
+      const loaded = column.cells
+        .map((cell, idx) => ({ ...cell, idx }))
+        .filter(cell => !!cell.buffer);
+
+      if (loaded.length > 0) {
+        const chosen = loaded[Math.floor(Math.random() * loaded.length)];
+        const densityRoll = Math.random() * 100;
+        if (densityRoll < column.density) {
+          triggerColumnBuffer(chosen.buffer, colIndex, chosen.idx);
+        }
+      }
+      scheduleColumn(colIndex, column.speed);
+    }
+
+    function triggerColumnBuffer(buffer, colIndex, rowIndex) {
+      const source = audioCtx.createBufferSource();
+      source.buffer = buffer;
+      source.connect(masterGain);
+      const playKey = `${colIndex}-${rowIndex}`;
+      state.currentlyPlayingCells.add(playKey);
+      renderPalette();
+      state.activeSources.add(source);
+      source.onended = () => {
+        state.activeSources.delete(source);
+        state.currentlyPlayingCells.delete(playKey);
+        renderPalette();
+      };
+      source.start();
+    }
+
+    function clearAll() {
+      stopTransport();
+      if (state.isSessionRecording) stopSessionRecording(true);
+      if (state.sampleRecorder && state.sampleRecorder.state === 'recording') {
+        state.sampleRecorder.stop();
+      }
+      state.columns.forEach(col => {
+        col.cells.forEach(cell => cell.buffer = null);
+      });
+      state.currentSampleBuffer = null;
+      if (state.selectedCol != null) drawWaveform(null);
+      renderPalette();
+    }
+
+    async function downloadAllSamples() {
+      let count = 0;
+      for (let c = 0; c < NUM_COLS; c++) {
+        for (let r = 0; r < CELLS_PER_COL; r++) {
+          const buffer = state.columns[c].cells[r].buffer;
+          if (!buffer) continue;
+          const wavBlob = audioBufferToWavBlob(buffer);
+          downloadBlob(wavBlob, `${c + 1} - ${r + 1}.wav`);
+          count++;
+          await sleep(60);
+        }
+      }
+      if (count === 0) {
+        alert('No samples to download.');
+      }
+    }
+
+    async function startSessionRecording() {
+      await ensureAudioStarted();
+      if (state.isSessionRecording) return;
+      try {
+        state.sessionChunks = [];
+        state.sessionDestination = audioCtx.createMediaStreamDestination();
+        masterGain.connect(state.sessionDestination);
+        state.sessionRecorder = new MediaRecorder(state.sessionDestination.stream);
+        state.sessionRecorder.ondataavailable = e => {
+          if (e.data && e.data.size > 0) state.sessionChunks.push(e.data);
+        };
+        state.sessionRecorder.onstop = async () => {
+          const blob = new Blob(state.sessionChunks, { type: state.sessionRecorder.mimeType || 'audio/webm' });
+          if (blob.size > 0) {
+            const arr = await blob.arrayBuffer();
+            const decoded = await audioCtx.decodeAudioData(arr.slice(0));
+            const wavBlob = audioBufferToWavBlob(decoded);
+            downloadBlob(wavBlob, `session-${timestampString()}.wav`);
+          }
+          cleanupSessionRecorder();
+          renderStatus();
+        };
+        state.sessionRecorder.start();
+        state.isSessionRecording = true;
+        renderStatus();
+      } catch (err) {
+        console.error(err);
+        alert('Could not start session recorder.');
+        cleanupSessionRecorder();
+        renderStatus();
+      }
+    }
+
+    function stopSessionRecording(silent = false) {
+      if (!state.isSessionRecording || !state.sessionRecorder) return;
+      if (state.sessionRecorder.state !== 'inactive') {
+        state.sessionRecorder.stop();
+      } else {
+        cleanupSessionRecorder();
+        renderStatus();
+      }
+    }
+
+    function cleanupSessionRecorder() {
+      if (state.sessionDestination) {
+        try { masterGain.disconnect(state.sessionDestination); } catch (_) {}
+      }
+      state.sessionDestination = null;
+      state.sessionRecorder = null;
+      state.sessionChunks = [];
+      state.isSessionRecording = false;
+    }
+
+    function audioBufferToWavBlob(buffer) {
+      const wav = audioBufferToWav(buffer);
+      return new Blob([wav], { type: 'audio/wav' });
+    }
+
+    function audioBufferToWav(buffer) {
+      const numChannels = buffer.numberOfChannels;
+      const sampleRate = buffer.sampleRate;
+      const format = 1;
+      const bitDepth = 16;
+      const samples = interleaveBuffer(buffer);
+      const blockAlign = numChannels * bitDepth / 8;
+      const byteRate = sampleRate * blockAlign;
+      const dataSize = samples.length * bitDepth / 8;
+      const bufferOut = new ArrayBuffer(44 + dataSize);
+      const view = new DataView(bufferOut);
+
+      writeString(view, 0, 'RIFF');
+      view.setUint32(4, 36 + dataSize, true);
+      writeString(view, 8, 'WAVE');
+      writeString(view, 12, 'fmt ');
+      view.setUint32(16, 16, true);
+      view.setUint16(20, format, true);
+      view.setUint16(22, numChannels, true);
+      view.setUint32(24, sampleRate, true);
+      view.setUint32(28, byteRate, true);
+      view.setUint16(32, blockAlign, true);
+      view.setUint16(34, bitDepth, true);
+      writeString(view, 36, 'data');
+      view.setUint32(40, dataSize, true);
+
+      floatTo16BitPCM(view, 44, samples);
+      return bufferOut;
+    }
+
+    function interleaveBuffer(buffer) {
+      const numChannels = buffer.numberOfChannels;
+      const length = buffer.length * numChannels;
+      const result = new Float32Array(length);
+      const channelData = [];
+      for (let ch = 0; ch < numChannels; ch++) channelData.push(buffer.getChannelData(ch));
+      let index = 0;
+      for (let i = 0; i < buffer.length; i++) {
+        for (let ch = 0; ch < numChannels; ch++) {
+          result[index++] = channelData[ch][i];
+        }
+      }
+      return result;
+    }
+
+    function floatTo16BitPCM(output, offset, input) {
+      for (let i = 0; i < input.length; i++, offset += 2) {
+        const s = Math.max(-1, Math.min(1, input[i]));
+        output.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+      }
+    }
+
+    function writeString(view, offset, string) {
+      for (let i = 0; i < string.length; i++) {
+        view.setUint8(offset + i, string.charCodeAt(i));
+      }
+    }
+
+    function downloadBlob(blob, filename) {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+
+    function sleep(ms) {
+      return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    function timestampString() {
+      const d = new Date();
+      const pad = n => String(n).padStart(2, '0');
+      return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+    }
+
+    recordSampleBtn.addEventListener('click', startSampleRecording);
+    playSampleBtn.addEventListener('click', () => playBuffer(state.currentSampleBuffer || getSelectedStoredBuffer()));
+    addSampleBtn.addEventListener('click', addCurrentSampleToCell);
+    deleteSampleBtn.addEventListener('click', deleteCurrentCellSample);
+
+    transportBtn.addEventListener('click', toggleTransport);
+    clearBtn.addEventListener('click', clearAll);
+    downloadSamplesBtn.addEventListener('click', downloadAllSamples);
+    recordSessionBtn.addEventListener('click', () => {
+      if (state.isSessionRecording) {
+        stopSessionRecording(false);
+      } else {
+        startSessionRecording();
+      }
+    });
+
+    window.addEventListener('resize', resizeWaveCanvas);
+
+    initState();
+    buildPalette();
+    renderPalette();
+    sampleImage.src = '1.png';
+    resizeWaveCanvas();
+  </script>
+</body>
+</html>
