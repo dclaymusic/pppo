@@ -147,6 +147,7 @@
 
     <button id="clearBtn" type="button">Clear</button>
     <button id="shuffleBtn" type="button">Shuffle</button>
+    <button id="downloadBtn" type="button">Download</button>
   </div>
 
   <div id="main-area">
@@ -157,18 +158,25 @@
     const ROWS = 9;
     const STEPS = 16;
     const PATTERN_LENGTHS = [2, 3, 4, 6, 8];
+    const DOWNLOAD_REPEATS = 4;
+    const DOWNLOAD_SR = 44100;
 
     const sequencerWindow = document.getElementById("sequencer-window");
     const playStopBtn = document.getElementById("playStopBtn");
     const speedInput = document.getElementById("speedInput");
     const clearBtn = document.getElementById("clearBtn");
     const shuffleBtn = document.getElementById("shuffleBtn");
+    const downloadBtn = document.getElementById("downloadBtn");
 
     let isPlaying = false;
     let currentStep = 0;
     let timerId = null;
+    let audioUnlocked = false;
+    let sampleBuffersPromise = null;
 
     const stepCells = [];
+    const rowSounds = [];
+    const sampleBuffers = new Array(ROWS).fill(null);
 
     function getOffImage(row, isActive) {
       return isActive ? `${row + 1}-off.png` : `0-off.png`;
@@ -218,11 +226,17 @@
 
       cell.appendChild(img);
 
-      cell.addEventListener("click", () => {
+      cell.addEventListener("click", async () => {
         if (isPlaying) return;
+
+        await unlockAudio();
 
         const nextState = cell.dataset.active !== "true";
         setCellState(row, step, nextState);
+
+        if (nextState) {
+          playRowSound(row);
+        }
       });
 
       return cell;
@@ -242,10 +256,90 @@
       }
     }
 
+    function buildAudio() {
+      for (let row = 0; row < ROWS; row++) {
+        const audio = new Audio(`${row + 1}.mp3`);
+        audio.preload = "auto";
+        rowSounds.push(audio);
+      }
+    }
+
+    async function unlockAudio() {
+      if (audioUnlocked) return;
+      audioUnlocked = true;
+
+      const attempts = rowSounds.map(audio => {
+        audio.volume = 1;
+        return audio.play()
+          .then(() => {
+            audio.pause();
+            audio.currentTime = 0;
+          })
+          .catch(() => {});
+      });
+
+      await Promise.all(attempts);
+    }
+
+    function playRowSound(row) {
+      const source = rowSounds[row];
+      if (!source) return;
+
+      try {
+        const voice = source.cloneNode();
+        voice.play().catch(() => {});
+      } catch (err) {
+        source.currentTime = 0;
+        source.play().catch(() => {});
+      }
+    }
+
+    async function ensureSampleBuffersLoaded() {
+      if (sampleBuffers.every(Boolean)) return sampleBuffers;
+      if (sampleBuffersPromise) return sampleBuffersPromise;
+
+      sampleBuffersPromise = (async () => {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (!AudioCtx) {
+          throw new Error("Web Audio API is not supported in this browser.");
+        }
+
+        const ctx = new AudioCtx();
+
+        try {
+          for (let row = 0; row < ROWS; row++) {
+            if (sampleBuffers[row]) continue;
+
+            const response = await fetch(`${row + 1}.mp3`);
+            if (!response.ok) {
+              throw new Error(`Could not load ${row + 1}.mp3`);
+            }
+
+            const arrayBuffer = await response.arrayBuffer();
+            const audioBuffer = await ctx.decodeAudioData(arrayBuffer.slice(0));
+            sampleBuffers[row] = audioBuffer;
+          }
+        } finally {
+          if (ctx.state !== "closed") {
+            await ctx.close().catch(() => {});
+          }
+        }
+
+        return sampleBuffers;
+      })();
+
+      try {
+        return await sampleBuffersPromise;
+      } finally {
+        sampleBuffersPromise = null;
+      }
+    }
+
     function setControlsLocked(locked) {
       speedInput.disabled = locked;
       clearBtn.disabled = locked;
       shuffleBtn.disabled = locked;
+      downloadBtn.disabled = locked;
 
       for (let row = 0; row < ROWS; row++) {
         for (let step = 0; step < STEPS; step++) {
@@ -254,15 +348,22 @@
       }
     }
 
-    function renderColumn(stepIndex, useOnImages) {
+    function renderColumn(stepIndex, useOnImages, triggerSound = false) {
       for (let row = 0; row < ROWS; row++) {
+        const cell = stepCells[row][stepIndex];
+        const isActive = cell.dataset.active === "true";
+
         setCellVisual(row, stepIndex, useOnImages);
+
+        if (useOnImages && triggerSound && isActive) {
+          playRowSound(row);
+        }
       }
     }
 
     function clearAllColumnsToOff() {
       for (let step = 0; step < STEPS; step++) {
-        renderColumn(step, false);
+        renderColumn(step, false, false);
       }
     }
 
@@ -310,14 +411,16 @@
     }
 
     function advanceSequencer() {
-      renderColumn(currentStep, false);
+      renderColumn(currentStep, false, false);
       currentStep = (currentStep + 1) % STEPS;
-      renderColumn(currentStep, true);
+      renderColumn(currentStep, true, true);
       timerId = setTimeout(advanceSequencer, getStepIntervalMs());
     }
 
-    function startSequencer() {
+    async function startSequencer() {
       if (isPlaying) return;
+
+      await unlockAudio();
 
       isPlaying = true;
       playStopBtn.textContent = "Stop";
@@ -325,7 +428,7 @@
 
       currentStep = 0;
       clearAllColumnsToOff();
-      renderColumn(currentStep, true);
+      renderColumn(currentStep, true, true);
 
       timerId = setTimeout(advanceSequencer, getStepIntervalMs());
     }
@@ -346,18 +449,145 @@
       currentStep = 0;
     }
 
-    playStopBtn.addEventListener("click", () => {
+    function getLongestSampleDuration(buffers) {
+      let max = 0;
+      for (const buffer of buffers) {
+        if (buffer && buffer.duration > max) {
+          max = buffer.duration;
+        }
+      }
+      return max;
+    }
+
+    function audioBufferToWav(buffer) {
+      const numChannels = buffer.numberOfChannels;
+      const sampleRate = buffer.sampleRate;
+      const format = 1;
+      const bitDepth = 16;
+      const numFrames = buffer.length;
+      const blockAlign = numChannels * bitDepth / 8;
+      const byteRate = sampleRate * blockAlign;
+      const dataSize = numFrames * blockAlign;
+      const bufferSize = 44 + dataSize;
+
+      const arrayBuffer = new ArrayBuffer(bufferSize);
+      const view = new DataView(arrayBuffer);
+
+      function writeString(offset, string) {
+        for (let i = 0; i < string.length; i++) {
+          view.setUint8(offset + i, string.charCodeAt(i));
+        }
+      }
+
+      let offset = 0;
+      writeString(offset, "RIFF"); offset += 4;
+      view.setUint32(offset, 36 + dataSize, true); offset += 4;
+      writeString(offset, "WAVE"); offset += 4;
+      writeString(offset, "fmt "); offset += 4;
+      view.setUint32(offset, 16, true); offset += 4;
+      view.setUint16(offset, format, true); offset += 2;
+      view.setUint16(offset, numChannels, true); offset += 2;
+      view.setUint32(offset, sampleRate, true); offset += 4;
+      view.setUint32(offset, byteRate, true); offset += 4;
+      view.setUint16(offset, blockAlign, true); offset += 2;
+      view.setUint16(offset, bitDepth, true); offset += 2;
+      writeString(offset, "data"); offset += 4;
+      view.setUint32(offset, dataSize, true); offset += 4;
+
+      const channelData = [];
+      for (let channel = 0; channel < numChannels; channel++) {
+        channelData.push(buffer.getChannelData(channel));
+      }
+
+      for (let i = 0; i < numFrames; i++) {
+        for (let channel = 0; channel < numChannels; channel++) {
+          let sample = channelData[channel][i];
+          sample = Math.max(-1, Math.min(1, sample));
+          const intSample = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
+          view.setInt16(offset, intSample, true);
+          offset += 2;
+        }
+      }
+
+      return new Blob([arrayBuffer], { type: "audio/wav" });
+    }
+
+    async function renderSequenceToWav() {
+      const buffers = await ensureSampleBuffersLoaded();
+      const stepDuration = getStepIntervalMs() / 1000;
+      const patternDuration = STEPS * stepDuration;
+      const sequenceDuration = patternDuration * DOWNLOAD_REPEATS;
+      const tailDuration = getLongestSampleDuration(buffers);
+      const totalDuration = sequenceDuration + tailDuration + 0.05;
+
+      const frameCount = Math.ceil(totalDuration * DOWNLOAD_SR);
+      const offlineCtx = new OfflineAudioContext(2, frameCount, DOWNLOAD_SR);
+
+      for (let repeat = 0; repeat < DOWNLOAD_REPEATS; repeat++) {
+        const repeatOffset = repeat * patternDuration;
+
+        for (let step = 0; step < STEPS; step++) {
+          const stepTime = repeatOffset + step * stepDuration;
+
+          for (let row = 0; row < ROWS; row++) {
+            const cell = stepCells[row][step];
+            const isActive = cell.dataset.active === "true";
+            const buffer = buffers[row];
+
+            if (!isActive || !buffer) continue;
+
+            const source = offlineCtx.createBufferSource();
+            source.buffer = buffer;
+            source.connect(offlineCtx.destination);
+            source.start(stepTime);
+          }
+        }
+      }
+
+      const renderedBuffer = await offlineCtx.startRendering();
+      return audioBufferToWav(renderedBuffer);
+    }
+
+    async function downloadSequence() {
+      if (isPlaying) return;
+
+      const originalText = downloadBtn.textContent;
+      downloadBtn.disabled = true;
+      downloadBtn.textContent = "...";
+
+      try {
+        const wavBlob = await renderSequenceToWav();
+        const url = URL.createObjectURL(wavBlob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = "visual-step-sequence.wav";
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      } catch (error) {
+        console.error(error);
+        alert("Could not generate WAV file.");
+      } finally {
+        downloadBtn.textContent = originalText;
+        downloadBtn.disabled = isPlaying;
+      }
+    }
+
+    playStopBtn.addEventListener("click", async () => {
       if (isPlaying) {
         stopSequencer();
       } else {
-        startSequencer();
+        await startSequencer();
       }
     });
 
     clearBtn.addEventListener("click", clearPattern);
     shuffleBtn.addEventListener("click", shufflePattern);
+    downloadBtn.addEventListener("click", downloadSequence);
 
     buildGrid();
+    buildAudio();
   </script>
 </body>
 </html>
